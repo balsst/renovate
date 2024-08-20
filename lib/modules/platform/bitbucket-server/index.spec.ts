@@ -2,6 +2,7 @@ import is from '@sindresorhus/is';
 import { mockDeep } from 'jest-mock-extended';
 import * as httpMock from '../../../../test/http-mock';
 import { mocked } from '../../../../test/util';
+import { GlobalConfig } from '../../../config/global';
 import {
   REPOSITORY_CHANGED,
   REPOSITORY_EMPTY,
@@ -16,6 +17,7 @@ import type { Platform } from '../types';
 jest.mock('timers/promises');
 jest.mock('../../../util/git');
 jest.mock('../../../util/host-rules', () => mockDeep());
+jest.mock('../../../util/fs', () => mockDeep());
 
 function sshLink(projectKey: string, repositorySlug: string): string {
   return `ssh://git@stash.renovatebot.com:7999/${projectKey.toLowerCase()}/${repositorySlug}.git`;
@@ -220,6 +222,7 @@ describe('modules/platform/bitbucket-server/index', () => {
         // reset module
         jest.resetModules();
         bitbucket = await import('.');
+        GlobalConfig.set({ localDir: '' });
         logger = mocked(await import('../../../logger')).logger;
         hostRules = jest.requireMock('../../../util/host-rules');
         git = jest.requireMock('../../../util/git');

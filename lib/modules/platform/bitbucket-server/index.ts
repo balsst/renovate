@@ -10,6 +10,7 @@ import { logger } from '../../../logger';
 import type { BranchStatus } from '../../../types';
 import type { FileData } from '../../../types/platform/bitbucket-server';
 import { parseJson } from '../../../util/common';
+import { readLocalFile } from '../../../util/fs';
 import * as git from '../../../util/git';
 import { deleteBranch } from '../../../util/git';
 import * as hostRules from '../../../util/host-rules';
@@ -21,6 +22,7 @@ import type { HttpOptions, HttpResponse } from '../../../util/http/types';
 import { newlineRegex, regEx } from '../../../util/regex';
 import { sanitize } from '../../../util/sanitize';
 import { ensureTrailingSlash, getQueryString } from '../../../util/url';
+import { parseSingleYaml } from '../../../util/yaml';
 import type {
   BranchStatusConfig,
   CreatePRConfig,
@@ -654,9 +656,49 @@ export async function addReviewers(
 ): Promise<void> {
   logger.debug(`Adding reviewers '${reviewers.join(', ')}' to #${prNo}`);
 
-  await retry(updatePRAndAddReviewers, [prNo, reviewers], 3, [
+  const newReviewers: string[] = [];
+
+  for (const r of reviewers) {
+    if (!r.startsWith("@teams/")) {
+      newReviewers.push(r);
+    }
+    newReviewers.push(...await getReviewersForTeam(r.replace('@teams/', '')));
+  }
+
+  await retry(updatePRAndAddReviewers, [prNo, newReviewers], 3, [
     REPOSITORY_CHANGED,
   ]);
+}
+
+interface Team {
+  team: string
+  contributors: string[]
+  reviews: Reviews
+}
+
+interface Reviews {
+  strategy: string
+  select?: number
+}
+
+async function getReviewersForTeam(team_name: string): Promise<string[]> {
+  const teams_yaml = await readLocalFile('.bitbucket/teams.yaml', 'utf8')
+  if (teams_yaml === null) {
+    return []
+  }
+  const parsedData = parseSingleYaml<any>(teams_yaml);
+
+  const teams = Object.keys(parsedData).map(key => ({
+    team: key,
+    ...parsedData[key]
+  })) as Team[];
+
+  teams.forEach((team) => {
+    if (team.team === team_name) {
+      return team.contributors;
+    }
+  })
+  return [];
 }
 
 async function updatePRAndAddReviewers(
